@@ -1,3 +1,4 @@
+/*
 /// This implementation works when enabled a debug mode of Libc++.
 /// Please see the link below to get more detail.
 /// https://libcxx.llvm.org/docs/DesignDocs/DebugMode.html
@@ -595,3 +596,4 @@ __c_node::__remove(__i_node* p)
 #endif // defined(USE_DEBUG_MODE)
 
 _LIBCPP_END_NAMESPACE_STD
+*/
