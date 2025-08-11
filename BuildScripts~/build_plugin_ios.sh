@@ -25,14 +25,14 @@ cmake . \
 
 xcodebuild \
   -sdk iphonesimulator \
-  -arch 'x86_64' \
+  -arch 'arm64' \
   -project build/webrtc.xcodeproj \
   -target WebRTCLib \
   -configuration Release
 
 xcodebuild archive \
   -sdk iphonesimulator \
-  -arch 'x86_64' \
+  -arch 'arm64' \
   -scheme WebRTCPlugin \
   -project build/webrtc.xcodeproj \
   -configuration Release \
@@ -58,6 +58,6 @@ cp -r "$WEBRTC_ARCHIVE_DIR/Products/@rpath/webrtc.framework" "$WEBRTC_FRAMEWORK_
 # But currently this is commented out because the combined binary adds a troublesome task to developer 
 # when building iOS app on XCode. We need to support it using XCFramework or another way.
 # 
-# lipo -create -o "$WEBRTC_FRAMEWORK_DIR/webrtc.framework/webrtc" \
-#   "$WEBRTC_ARCHIVE_DIR/Products/@rpath/webrtc.framework/webrtc" \
-#   "$WEBRTC_SIM_ARCHIVE_DIR/Products/@rpath/webrtc.framework/webrtc"
+lipo -create -o "$WEBRTC_FRAMEWORK_DIR/webrtc.framework/webrtc" \
+   "$WEBRTC_ARCHIVE_DIR/Products/@rpath/webrtc.framework/webrtc" \
+   "$WEBRTC_SIM_ARCHIVE_DIR/Products/@rpath/webrtc.framework/webrtc"
