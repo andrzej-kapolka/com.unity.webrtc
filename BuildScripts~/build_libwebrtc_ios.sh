@@ -56,6 +56,7 @@ do
       --args="is_debug=${is_debug} \
       target_os=\"ios\" \
       target_cpu=\"${target_cpu}\" \
+      target_environment=\"simulator\" \
       rtc_use_h264=false \
       use_custom_libcxx=false \
       treat_warnings_as_errors=false \

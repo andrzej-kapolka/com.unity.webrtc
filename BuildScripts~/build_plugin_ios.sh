@@ -1,6 +1,7 @@
 #!/bin/bash -eu
 
 export LIBWEBRTC_DOWNLOAD_URL=https://github.com/Unity-Technologies/com.unity.webrtc/releases/download/M116/webrtc-ios.zip
+export ARTIFACTS_DIR="$(pwd)/artifacts"
 export SOLUTION_DIR=$(pwd)/Plugin~
 export WEBRTC_FRAMEWORK_DIR=$(pwd)/Runtime/Plugins/iOS
 export WEBRTC_ARCHIVE_DIR=build/webrtc.xcarchive
@@ -10,9 +11,9 @@ export WEBRTC_SIM_ARCHIVE_DIR=build/webrtc-sim.xcarchive
 export HOMEBREW_NO_AUTO_UPDATE=1
 brew install cmake
 
-# Download webrtc 
-curl -L $LIBWEBRTC_DOWNLOAD_URL > webrtc.zip
-unzip -d $SOLUTION_DIR/webrtc webrtc.zip 
+# Unzip webrtc 
+#curl -L $LIBWEBRTC_DOWNLOAD_URL > webrtc.zip
+unzip -d $SOLUTION_DIR/webrtc "$ARTIFACTS_DIR/webrtc-ios.zip"
 
 # Build webrtc Unity plugin 
 cd "$SOLUTION_DIR"
@@ -27,39 +28,24 @@ cmake . \
 
 xcodebuild \
   -sdk iphonesimulator \
-  -arch 'arm64' \
   -project build/webrtc.xcodeproj \
   -target WebRTCLib \
   -configuration Release
 
 xcodebuild archive \
   -sdk iphonesimulator \
-  -arch 'arm64' \
   -scheme WebRTCPlugin \
   -project build/webrtc.xcodeproj \
   -configuration Release \
   -archivePath "$WEBRTC_SIM_ARCHIVE_DIR"
 
-xcodebuild \
-  -sdk iphoneos \
-  -project build/webrtc.xcodeproj \
-  -target WebRTCLib \
-  -configuration Release
-
-xcodebuild archive \
-  -sdk iphoneos \
-  -scheme WebRTCPlugin \
-  -project build/webrtc.xcodeproj \
-  -configuration Release \
-  -archivePath "$WEBRTC_ARCHIVE_DIR"
-
 rm -rf "$WEBRTC_FRAMEWORK_DIR/webrtc.framework"
-cp -r "$WEBRTC_ARCHIVE_DIR/Products/@rpath/webrtc.framework" "$WEBRTC_FRAMEWORK_DIR/webrtc.framework"
+cp -r "$WEBRTC_SIM_ARCHIVE_DIR/Products/@rpath/webrtc.framework" "$WEBRTC_FRAMEWORK_DIR/webrtc.framework"
 
 # todo(kazuki): The command below combines two libraries for supporting iOS and iOS simulator.
 # But currently this is commented out because the combined binary adds a troublesome task to developer 
 # when building iOS app on XCode. We need to support it using XCFramework or another way.
 # 
-lipo -create -o "$WEBRTC_FRAMEWORK_DIR/webrtc.framework/webrtc" \
-   "$WEBRTC_ARCHIVE_DIR/Products/@rpath/webrtc.framework/webrtc" \
-   "$WEBRTC_SIM_ARCHIVE_DIR/Products/@rpath/webrtc.framework/webrtc"
+#lipo -create -o "$WEBRTC_FRAMEWORK_DIR/webrtc.framework/webrtc" \
+#   "$WEBRTC_ARCHIVE_DIR/Products/@rpath/webrtc.framework/webrtc" \
+#   "$WEBRTC_SIM_ARCHIVE_DIR/Products/@rpath/webrtc.framework/webrtc"
