@@ -1,9 +1,13 @@
 #pragma once
 
+#include <Metal/Metal.h>
+
 #include "GraphicsDevice/ITexture2D.h"
 #include "WebRTCMacros.h"
 
 #include <api/video/i420_buffer.h>
+
+#include <dispatch/dispatch.h>
 
 namespace unity
 {
