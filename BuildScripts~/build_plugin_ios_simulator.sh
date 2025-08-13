@@ -3,7 +3,7 @@
 export LIBWEBRTC_DOWNLOAD_URL=https://github.com/Unity-Technologies/com.unity.webrtc/releases/download/M116/webrtc-ios.zip
 export ARTIFACTS_DIR="$(pwd)/artifacts"
 export SOLUTION_DIR=$(pwd)/Plugin~
-export WEBRTC_FRAMEWORK_DIR=$(pwd)/Runtime/Plugins/iOS
+export WEBRTC_FRAMEWORK_DIR=$(pwd)/Runtime/Plugins/iOS-simulator
 export WEBRTC_ARCHIVE_DIR=build/webrtc.xcarchive
 export WEBRTC_SIM_ARCHIVE_DIR=build/webrtc-sim.xcarchive
 
@@ -13,7 +13,7 @@ brew install cmake
 
 # Unzip webrtc 
 #curl -L $LIBWEBRTC_DOWNLOAD_URL > webrtc.zip
-unzip -d $SOLUTION_DIR/webrtc "$ARTIFACTS_DIR/webrtc-ios.zip"
+unzip -d $SOLUTION_DIR/webrtc "$ARTIFACTS_DIR/webrtc-ios-simulator.zip"
 
 # Build webrtc Unity plugin 
 cd "$SOLUTION_DIR"
@@ -27,20 +27,20 @@ cmake . \
   -B build
 
 xcodebuild \
-  -sdk iphoneos \
+  -sdk iphonesimulator \
   -project build/webrtc.xcodeproj \
   -target WebRTCLib \
   -configuration Release
 
 xcodebuild archive \
-  -sdk iphoneos \
+  -sdk iphonesimulator \
   -scheme WebRTCPlugin \
   -project build/webrtc.xcodeproj \
   -configuration Release \
-  -archivePath "$WEBRTC_ARCHIVE_DIR"
+  -archivePath "$WEBRTC_SIM_ARCHIVE_DIR"
 
 rm -rf "$WEBRTC_FRAMEWORK_DIR/webrtc.framework"
-cp -r "$WEBRTC_ARCHIVE_DIR/Products/@rpath/webrtc.framework" "$WEBRTC_FRAMEWORK_DIR/webrtc.framework"
+cp -r "$WEBRTC_SIM_ARCHIVE_DIR/Products/@rpath/webrtc.framework" "$WEBRTC_FRAMEWORK_DIR/webrtc.framework"
 
 # todo(kazuki): The command below combines two libraries for supporting iOS and iOS simulator.
 # But currently this is commented out because the combined binary adds a troublesome task to developer 

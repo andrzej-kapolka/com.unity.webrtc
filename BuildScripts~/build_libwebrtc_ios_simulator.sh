@@ -43,7 +43,7 @@ mkdir -p "$ARTIFACTS_DIR/lib"
 
 for is_debug in "true" "false"
 do
-  for target_cpu in "arm64"
+  for target_cpu in "arm64" "x64"
   do
     # generate ninja files
     # 
@@ -56,6 +56,7 @@ do
       --args="is_debug=${is_debug} \
       target_os=\"ios\" \
       target_cpu=\"${target_cpu}\" \
+      target_environment=\"simulator\" \
       rtc_use_h264=false \
       use_custom_libcxx=false \
       treat_warnings_as_errors=false \
@@ -80,9 +81,11 @@ do
   # make universal binary
   lipo -create -output                   \
   "$ARTIFACTS_DIR/lib/${filename}"       \
-  "$ARTIFACTS_DIR/lib/arm64/libwebrtc.a"
+  "$ARTIFACTS_DIR/lib/arm64/libwebrtc.a" \
+  "$ARTIFACTS_DIR/lib/x64/libwebrtc.a"
   
   rm -r "$ARTIFACTS_DIR/lib/arm64"
+  rm -r "$ARTIFACTS_DIR/lib/x64"
 done
 
 "$PYTHON3_BIN" "./src/tools_webrtc/libs/generate_licenses.py" \
@@ -95,4 +98,4 @@ cp "$OUTPUT_DIR/LICENSE.md" "$ARTIFACTS_DIR"
 
 # create zip
 cd "$ARTIFACTS_DIR"
-zip -r webrtc-ios.zip lib include LICENSE.md
+zip -r webrtc-ios-simulator.zip lib include LICENSE.md
