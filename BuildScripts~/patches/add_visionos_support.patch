@@ -1,0 +1,1667 @@
+Binary files com.unity.webrtc/src/build/__pycache__/find_depot_tools.cpython-311.pyc and com.unity.webrtc.updated/src/build/__pycache__/find_depot_tools.cpython-311.pyc differ
+Binary files com.unity.webrtc/src/build/__pycache__/gn_helpers.cpython-311.pyc and com.unity.webrtc.updated/src/build/__pycache__/gn_helpers.cpython-311.pyc differ
+Binary files com.unity.webrtc/src/build/__pycache__/mac_toolchain.cpython-311.pyc and com.unity.webrtc.updated/src/build/__pycache__/mac_toolchain.cpython-311.pyc differ
+diff -ruN -x \ com.unity.webrtc/src/build/config/apple/sdk_info.py com.unity.webrtc.updated/src/build/config/apple/sdk_info.py
+--- com.unity.webrtc/src/build/config/apple/sdk_info.py	2025-08-13 16:30:20
++++ com.unity.webrtc.updated/src/build/config/apple/sdk_info.py	2025-08-12 11:12:29
+@@ -134,7 +134,7 @@
+                       default='.',
+                       help='Value of gn $root_build_dir')
+   parser.add_argument('platform',
+-                      choices=['iphoneos', 'iphonesimulator', 'macosx'])
++                      choices=['iphoneos', 'iphonesimulator', 'macosx', 'xros', 'xrsimulator'])
+   args = parser.parse_args()
+   if args.developer_dir:
+     os.environ['DEVELOPER_DIR'] = args.developer_dir
+diff -ruN -x \ com.unity.webrtc/src/build/config/ios/BUILD.gn com.unity.webrtc.updated/src/build/config/ios/BUILD.gn
+--- com.unity.webrtc/src/build/config/ios/BUILD.gn	2025-08-13 16:30:20
++++ com.unity.webrtc.updated/src/build/config/ios/BUILD.gn	2025-08-12 10:55:14
+@@ -15,38 +15,42 @@
+   # These flags are shared between the C compiler and linker.
+   common_flags = []
+ 
+-  # CPU architecture.
+-  if (current_cpu == "x64") {
+-    triplet_cpu = "x86_64"
+-  } else if (current_cpu == "x86") {
+-    triplet_cpu = "i386"
+-  } else if (current_cpu == "arm" || current_cpu == "armv7") {
+-    triplet_cpu = "armv7"
+-  } else if (current_cpu == "arm64") {
+-    triplet_cpu = "arm64"
+-  } else {
+-    assert(false, "unsupported cpu: $current_cpu")
+-  }
++  if (ios_target_override == "") {
++    # CPU architecture.
++    if (current_cpu == "x64") {
++      triplet_cpu = "x86_64"
++    } else if (current_cpu == "x86") {
++      triplet_cpu = "i386"
++    } else if (current_cpu == "arm" || current_cpu == "armv7") {
++      triplet_cpu = "armv7"
++    } else if (current_cpu == "arm64") {
++      triplet_cpu = "arm64"
++    } else {
++      assert(false, "unsupported cpu: $current_cpu")
++    }
+ 
+-  # Environment.
+-  if (target_environment == "simulator") {
+-    triplet_environment = "-simulator"
+-  } else if (target_environment == "device") {
+-    triplet_environment = ""
+-  } else if (target_environment == "catalyst") {
+-    triplet_environment = "-macabi"
+-  } else {
+-    assert(false, "unsupported environment: $target_environment")
+-  }
++    # Environment.
++    if (target_environment == "simulator") {
++      triplet_environment = "-simulator"
++    } else if (target_environment == "device") {
++      triplet_environment = ""
++    } else if (target_environment == "catalyst") {
++      triplet_environment = "-macabi"
++    } else {
++      assert(false, "unsupported environment: $target_environment")
++    }
+ 
+-  # OS.
+-  triplet_os = "apple-ios"
++    # OS.
++    triplet_os = "apple-ios"
+ 
+-  # Set target.
+-  common_flags = [
+-    "-target",
+-    "$triplet_cpu-$triplet_os$ios_deployment_target$triplet_environment",
+-  ]
++    # Set target.
++    common_flags = [
++      "-target",
++      "$triplet_cpu-$triplet_os$ios_deployment_target$triplet_environment",
++    ]
++  } else {
++    common_flags = [ "-target", ios_target_override ]
++  }
+ 
+   # This is here so that all files get recompiled after an Xcode update.
+   # (defines are passed via the command line, and build system rebuild things
+diff -ruN -x \ com.unity.webrtc/src/build/config/ios/codesign.py com.unity.webrtc.updated/src/build/config/ios/codesign.py
+--- com.unity.webrtc/src/build/config/ios/codesign.py	2025-08-13 16:30:20
++++ com.unity.webrtc.updated/src/build/config/ios/codesign.py	2025-08-12 13:42:30
+@@ -89,7 +89,7 @@
+ 
+   @staticmethod
+   def Kind(platform, extension):
+-    if platform == 'iphonesimulator' or platform == 'iphoneos':
++    if platform == 'iphonesimulator' or platform == 'iphoneos' or platform == 'xrsimulator' or platform == 'xros':
+       return 'ios'
+     if platform == 'macosx':
+       if extension == '.framework':
+diff -ruN -x \ com.unity.webrtc/src/build/config/ios/ios_sdk.gni com.unity.webrtc.updated/src/build/config/ios/ios_sdk.gni
+--- com.unity.webrtc/src/build/config/ios/ios_sdk.gni	2025-08-13 16:30:20
++++ com.unity.webrtc.updated/src/build/config/ios/ios_sdk.gni	2025-08-14 09:14:32
+@@ -27,6 +27,10 @@
+   xcode_build = ""
+   machine_os_build = ""
+ 
++  ios_target_override = ""
++  ios_sdk_override = ""
++  xros = false
++
+   # Set DEVELOPER_DIR while running sdk_info.py.
+   ios_sdk_developer_dir = ""
+ 
+@@ -74,10 +78,18 @@
+ if (ios_sdk_path == "") {
+   # Compute default target.
+   if (target_environment == "simulator") {
+-    ios_sdk_name = "iphonesimulator"
++    if (xros) {
++      ios_sdk_name = "xrsimulator"
++    } else {
++      ios_sdk_name = "iphonesimulator"
++    }
+     ios_sdk_platform = "iPhoneSimulator"
+   } else if (target_environment == "device") {
+-    ios_sdk_name = "iphoneos"
++    if (xros) {
++      ios_sdk_name = "xros"
++    } else {
++      ios_sdk_name = "iphoneos"
++    }
+     ios_sdk_platform = "iPhoneOS"
+   } else if (target_environment == "catalyst") {
+     ios_sdk_name = "macosx"
+diff -ruN -x \ com.unity.webrtc/src/build/toolchain/apple/toolchain.gni com.unity.webrtc.updated/src/build/toolchain/apple/toolchain.gni
+--- com.unity.webrtc/src/build/toolchain/apple/toolchain.gni	2025-08-13 16:30:20
++++ com.unity.webrtc.updated/src/build/toolchain/apple/toolchain.gni	2025-08-12 11:05:30
+@@ -156,7 +156,7 @@
+       toolchain_is_component_build = is_component_build
+     }
+ 
+-    prefix = rebase_path("$clang_base_path/bin/", root_build_dir)
++    prefix = "$clang_base_path/bin/"
+     _cc = "${prefix}clang"
+     _cxx = "${prefix}clang++"
+ 
+diff -ruN -x \ com.unity.webrtc/src/build/toolchain/mac/BUILD.gn com.unity.webrtc.updated/src/build/toolchain/mac/BUILD.gn
+--- com.unity.webrtc/src/build/toolchain/mac/BUILD.gn	2025-08-13 16:30:20
++++ com.unity.webrtc.updated/src/build/toolchain/mac/BUILD.gn	2025-08-12 13:06:40
+@@ -24,7 +24,7 @@
+ 
+       if (target_os == "ios") {
+         # Use LLD for the host part of a chrome/ios build.
+-        use_lld = true
++        # use_lld = true
+ 
+         # Override `is_component_build` for the host toolchain.
+         # See https://crbug.com/gn/286 for details why this is
+diff -ruN -x \ com.unity.webrtc/src/pc/legacy_stats_collector.cc com.unity.webrtc.updated/src/pc/legacy_stats_collector.cc
+--- com.unity.webrtc/src/pc/legacy_stats_collector.cc	2025-08-13 16:29:55
++++ com.unity.webrtc.updated/src/pc/legacy_stats_collector.cc	2025-08-12 13:14:31
+@@ -188,9 +188,9 @@
+       {StatsReport::kStatsValueNameAccelerateRate, info.accelerate_rate},
+       {StatsReport::kStatsValueNamePreemptiveExpandRate,
+        info.preemptive_expand_rate},
+-      {StatsReport::kStatsValueNameTotalAudioEnergy, info.total_output_energy},
++      {StatsReport::kStatsValueNameTotalAudioEnergy, (float)info.total_output_energy},
+       {StatsReport::kStatsValueNameTotalSamplesDuration,
+-       info.total_output_duration}};
++       (float)info.total_output_duration}};
+ 
+   const IntForAdd ints[] = {
+       {StatsReport::kStatsValueNameCurrentDelayMs, info.delay_estimate_ms},
+@@ -244,9 +244,9 @@
+   SetAudioProcessingStats(report, info.apm_statistics);
+ 
+   const FloatForAdd floats[] = {
+-      {StatsReport::kStatsValueNameTotalAudioEnergy, info.total_input_energy},
++      {StatsReport::kStatsValueNameTotalAudioEnergy, (float)info.total_input_energy},
+       {StatsReport::kStatsValueNameTotalSamplesDuration,
+-       info.total_input_duration}};
++       (float)info.total_input_duration}};
+ 
+   RTC_DCHECK_GE(info.audio_level, 0);
+   const IntForAdd ints[] = {
+@@ -340,7 +340,7 @@
+       {StatsReport::kStatsValueNamePlisSent, info.plis_sent},
+       {StatsReport::kStatsValueNameRenderDelayMs, info.render_delay_ms},
+       {StatsReport::kStatsValueNameTargetDelayMs, info.target_delay_ms},
+-      {StatsReport::kStatsValueNameFramesDecoded, info.frames_decoded},
++      {StatsReport::kStatsValueNameFramesDecoded, (int)info.frames_decoded},
+   };
+ 
+   for (const auto& i : ints)
+@@ -384,15 +384,15 @@
+        info.encode_usage_percent},
+       {StatsReport::kStatsValueNameFirsReceived, info.firs_received},
+       {StatsReport::kStatsValueNameFrameHeightSent, info.send_frame_height},
+-      {StatsReport::kStatsValueNameFrameRateInput, round(info.framerate_input)},
++      {StatsReport::kStatsValueNameFrameRateInput, (int)round(info.framerate_input)},
+       {StatsReport::kStatsValueNameFrameRateSent, info.framerate_sent},
+       {StatsReport::kStatsValueNameFrameWidthSent, info.send_frame_width},
+-      {StatsReport::kStatsValueNameNacksReceived, info.nacks_received},
++      {StatsReport::kStatsValueNameNacksReceived, (int)info.nacks_received},
+       {StatsReport::kStatsValueNamePacketsLost, info.packets_lost},
+       {StatsReport::kStatsValueNamePacketsSent, info.packets_sent},
+       {StatsReport::kStatsValueNamePlisReceived, info.plis_received},
+-      {StatsReport::kStatsValueNameFramesEncoded, info.frames_encoded},
+-      {StatsReport::kStatsValueNameHugeFramesSent, info.huge_frames_sent},
++      {StatsReport::kStatsValueNameFramesEncoded, (int)info.frames_encoded},
++      {StatsReport::kStatsValueNameHugeFramesSent, (int)info.huge_frames_sent},
+   };
+ 
+   for (const auto& i : ints)
+@@ -780,19 +780,19 @@
+                 AddCandidateReport(remote_candidate_stats, false)->id());
+ 
+   const Int64ForAdd int64s[] = {
+-      {StatsReport::kStatsValueNameBytesReceived, info.recv_total_bytes},
+-      {StatsReport::kStatsValueNameBytesSent, info.sent_total_bytes},
+-      {StatsReport::kStatsValueNamePacketsSent, info.sent_total_packets},
+-      {StatsReport::kStatsValueNameRtt, info.rtt},
++      {StatsReport::kStatsValueNameBytesReceived, (int64_t)info.recv_total_bytes},
++      {StatsReport::kStatsValueNameBytesSent, (int64_t)info.sent_total_bytes},
++      {StatsReport::kStatsValueNamePacketsSent, (int64_t)info.sent_total_packets},
++      {StatsReport::kStatsValueNameRtt, (int64_t)info.rtt},
+       {StatsReport::kStatsValueNameSendPacketsDiscarded,
+-       info.sent_discarded_packets},
++       (int64_t)info.sent_discarded_packets},
+       {StatsReport::kStatsValueNameSentPingRequestsTotal,
+-       info.sent_ping_requests_total},
++       (int64_t)info.sent_ping_requests_total},
+       {StatsReport::kStatsValueNameSentPingRequestsBeforeFirstResponse,
+-       info.sent_ping_requests_before_first_response},
+-      {StatsReport::kStatsValueNameSentPingResponses, info.sent_ping_responses},
+-      {StatsReport::kStatsValueNameRecvPingRequests, info.recv_ping_requests},
+-      {StatsReport::kStatsValueNameRecvPingResponses, info.recv_ping_responses},
++       (int64_t)info.sent_ping_requests_before_first_response},
++      {StatsReport::kStatsValueNameSentPingResponses, (int64_t)info.sent_ping_responses},
++      {StatsReport::kStatsValueNameRecvPingRequests, (int64_t)info.recv_ping_requests},
++      {StatsReport::kStatsValueNameRecvPingResponses, (int64_t)info.recv_ping_responses},
+   };
+   for (const auto& i : int64s)
+     report->AddInt64(i.name, i.value);
+Binary files com.unity.webrtc/src/resources/near48_mono.pcm and com.unity.webrtc.updated/src/resources/near48_mono.pcm differ
+diff -ruN -x \ com.unity.webrtc/src/sdk/BUILD.gn com.unity.webrtc.updated/src/sdk/BUILD.gn
+--- com.unity.webrtc/src/sdk/BUILD.gn	2025-08-13 16:29:55
++++ com.unity.webrtc.updated/src/sdk/BUILD.gn	2025-08-13 16:46:31
+@@ -540,7 +540,6 @@
+           "objc/components/renderer/opengl/RTCNV12TextureCache.m",
+         ]
+         frameworks += [
+-          "GLKit.framework",
+           "OpenGLES.framework",
+           "QuartzCore.framework",
+         ]
+diff -ruN -x \ com.unity.webrtc/src/sdk/objc/components/capturer/RTCCameraVideoCapturer.m com.unity.webrtc.updated/src/sdk/objc/components/capturer/RTCCameraVideoCapturer.m
+--- com.unity.webrtc/src/sdk/objc/components/capturer/RTCCameraVideoCapturer.m	2025-08-13 16:29:55
++++ com.unity.webrtc.updated/src/sdk/objc/components/capturer/RTCCameraVideoCapturer.m	2025-08-12 12:39:50
+@@ -77,10 +77,10 @@
+ #if TARGET_OS_IPHONE
+     _orientation = UIDeviceOrientationPortrait;
+     _rotation = RTCVideoRotation_90;
+-    [center addObserver:self
++    /* [center addObserver:self
+                selector:@selector(deviceOrientationDidChange:)
+                    name:UIDeviceOrientationDidChangeNotification
+-                 object:nil];
++                 object:nil]; */
+     [center addObserver:self
+                selector:@selector(handleCaptureSessionInterruption:)
+                    name:AVCaptureSessionWasInterruptedNotification
+@@ -161,12 +161,12 @@
+                       RTCLogInfo("startCaptureWithDevice %@ @ %ld fps", format, (long)fps);
+ 
+ #if TARGET_OS_IPHONE
+-                      dispatch_async(dispatch_get_main_queue(), ^{
++                      /* dispatch_async(dispatch_get_main_queue(), ^{
+                         if (!self->_generatingOrientationNotifications) {
+                           [[UIDevice currentDevice] beginGeneratingDeviceOrientationNotifications];
+                           self->_generatingOrientationNotifications = YES;
+                         }
+-                      });
++                      }); */
+ #endif
+ 
+                       self.currentDevice = device;
+@@ -208,12 +208,12 @@
+                       [self.captureSession stopRunning];
+ 
+ #if TARGET_OS_IPHONE
+-                      dispatch_async(dispatch_get_main_queue(), ^{
++                      /* dispatch_async(dispatch_get_main_queue(), ^{
+                         if (self->_generatingOrientationNotifications) {
+                           [[UIDevice currentDevice] endGeneratingDeviceOrientationNotifications];
+                           self->_generatingOrientationNotifications = NO;
+                         }
+-                      });
++                      }); */
+ #endif
+                       self.isRunning = NO;
+                       if (completionHandler) {
+@@ -260,9 +260,9 @@
+   if (cameraPosition != AVCaptureDevicePositionUnspecified) {
+     usingFrontCamera = AVCaptureDevicePositionFront == cameraPosition;
+   } else {
+-    AVCaptureDeviceInput *deviceInput =
++    /* AVCaptureDeviceInput *deviceInput =
+         (AVCaptureDeviceInput *)((AVCaptureInputPort *)connection.inputPorts.firstObject).input;
+-    usingFrontCamera = AVCaptureDevicePositionFront == deviceInput.device.position;
++    usingFrontCamera = AVCaptureDevicePositionFront == deviceInput.device.position; */
+   }
+   switch (_orientation) {
+     case UIDeviceOrientationPortrait:
+@@ -432,8 +432,8 @@
+   NSAssert(_captureSession == nil, @"Setup capture session called twice.");
+   _captureSession = captureSession;
+ #if defined(WEBRTC_IOS)
+-  _captureSession.sessionPreset = AVCaptureSessionPresetInputPriority;
+-  _captureSession.usesApplicationAudioSession = NO;
++  //_captureSession.sessionPreset = AVCaptureSessionPresetInputPriority;
++  //_captureSession.usesApplicationAudioSession = NO;
+ #endif
+   [self setupVideoDataOutput];
+   // Add the output.
+@@ -506,8 +506,8 @@
+   NSAssert([RTC_OBJC_TYPE(RTCDispatcher) isOnQueueForType:RTCDispatcherTypeCaptureSession],
+            @"reconfigureCaptureSessionInput must be called on the capture queue.");
+   NSError *error = nil;
+-  AVCaptureDeviceInput *input =
+-      [AVCaptureDeviceInput deviceInputWithDevice:_currentDevice error:&error];
++  AVCaptureDeviceInput *input = [AVCaptureDeviceInput init];
++  input = [input initWithDevice:_currentDevice error:&error];
+   if (!input) {
+     RTCLogError(@"Failed to create front camera input: %@", error.localizedDescription);
+     return;
+@@ -528,7 +528,7 @@
+   NSAssert([RTC_OBJC_TYPE(RTCDispatcher) isOnQueueForType:RTCDispatcherTypeCaptureSession],
+            @"updateOrientation must be called on the capture queue.");
+ #if TARGET_OS_IPHONE
+-  _orientation = [UIDevice currentDevice].orientation;
++  // _orientation = [UIDevice currentDevice].orientation;
+ #endif
+ }
+ 
+diff -ruN -x \ com.unity.webrtc/src/sdk/objc/components/capturer/RTCFileVideoCapturer.m com.unity.webrtc.updated/src/sdk/objc/components/capturer/RTCFileVideoCapturer.m
+--- com.unity.webrtc/src/sdk/objc/components/capturer/RTCFileVideoCapturer.m	2025-08-13 16:29:55
++++ com.unity.webrtc.updated/src/sdk/objc/components/capturer/RTCFileVideoCapturer.m	2025-08-12 11:51:52
+@@ -80,25 +80,24 @@
+ - (void)setupReaderOnError:(RTCFileVideoCapturerErrorBlock)errorBlock {
+   AVURLAsset *asset = [AVURLAsset URLAssetWithURL:_fileURL options:nil];
+ 
+-  NSArray *allTracks = [asset tracksWithMediaType:AVMediaTypeVideo];
+-  NSError *error = nil;
++  [asset loadTracksWithMediaType:AVMediaTypeVideo completionHandler: ^(NSArray<AVAssetTrack*>* allTracks, NSError* error) {
++    self->_reader = [[AVAssetReader alloc] initWithAsset:asset error:&error];
++    if (error) {
++      errorBlock(error);
++      return;
++    }
+ 
+-  _reader = [[AVAssetReader alloc] initWithAsset:asset error:&error];
+-  if (error) {
+-    errorBlock(error);
+-    return;
+-  }
++    NSDictionary *options = @{
++      (NSString *)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)
++    };
++    self->_outTrack =
++        [[AVAssetReaderTrackOutput alloc] initWithTrack:allTracks.firstObject outputSettings:options];
++    [self->_reader addOutput:self->_outTrack];
+ 
+-  NSDictionary *options = @{
+-    (NSString *)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)
+-  };
+-  _outTrack =
+-      [[AVAssetReaderTrackOutput alloc] initWithTrack:allTracks.firstObject outputSettings:options];
+-  [_reader addOutput:_outTrack];
+-
+-  [_reader startReading];
+-  RTCLog(@"File capturer started reading");
+-  [self readNextBuffer];
++    [self->_reader startReading];
++    RTCLog(@"File capturer started reading");
++    [self readNextBuffer];
++  }];
+ }
+ - (void)stopCapture {
+   _status = RTCFileVideoCapturerStatusStopped;
+diff -ruN -x \ com.unity.webrtc/src/sdk/objc/components/renderer/metal/RTCMTLRenderer.h com.unity.webrtc.updated/src/sdk/objc/components/renderer/metal/RTCMTLRenderer.h
+--- com.unity.webrtc/src/sdk/objc/components/renderer/metal/RTCMTLRenderer.h	2025-08-13 16:29:55
++++ com.unity.webrtc.updated/src/sdk/objc/components/renderer/metal/RTCMTLRenderer.h	2025-08-12 13:28:21
+@@ -37,7 +37,7 @@
+  * cleanups.
+  */
+ 
+-#if TARGET_OS_IOS
++#if TARGET_OS_IOS || TARGET_OS_VISION
+ - (BOOL)addRenderingDestination:(__kindof UIView *)view;
+ #else
+ - (BOOL)addRenderingDestination:(__kindof NSView *)view;
+diff -ruN -x \ com.unity.webrtc/src/sdk/objc/components/renderer/opengl/RTCDefaultShader.h com.unity.webrtc.updated/src/sdk/objc/components/renderer/opengl/RTCDefaultShader.h
+--- com.unity.webrtc/src/sdk/objc/components/renderer/opengl/RTCDefaultShader.h	2025-08-13 16:29:55
++++ com.unity.webrtc.updated/src/sdk/objc/components/renderer/opengl/RTCDefaultShader.h	2025-08-12 13:35:53
+@@ -1,23 +0,0 @@
+-/*
+- *  Copyright 2017 The WebRTC project authors. All Rights Reserved.
+- *
+- *  Use of this source code is governed by a BSD-style license
+- *  that can be found in the LICENSE file in the root of the source
+- *  tree. An additional intellectual property rights grant can be found
+- *  in the file PATENTS.  All contributing project authors may
+- *  be found in the AUTHORS file in the root of the source tree.
+- */
+-
+-#import "RTCVideoViewShading.h"
+-
+-NS_ASSUME_NONNULL_BEGIN
+-
+-/** Default RTCVideoViewShading that will be used in RTCNSGLVideoView
+- *  and RTCEAGLVideoView if no external shader is specified. This shader will render
+- *  the video in a rectangle without any color or geometric transformations.
+- */
+-@interface RTCDefaultShader : NSObject <RTC_OBJC_TYPE (RTCVideoViewShading)>
+-
+-@end
+-
+-NS_ASSUME_NONNULL_END
+diff -ruN -x \ com.unity.webrtc/src/sdk/objc/components/renderer/opengl/RTCDefaultShader.mm com.unity.webrtc.updated/src/sdk/objc/components/renderer/opengl/RTCDefaultShader.mm
+--- com.unity.webrtc/src/sdk/objc/components/renderer/opengl/RTCDefaultShader.mm	2025-08-13 16:29:55
++++ com.unity.webrtc.updated/src/sdk/objc/components/renderer/opengl/RTCDefaultShader.mm	2025-08-12 13:35:48
+@@ -1,207 +0,0 @@
+-/*
+- *  Copyright 2017 The WebRTC project authors. All Rights Reserved.
+- *
+- *  Use of this source code is governed by a BSD-style license
+- *  that can be found in the LICENSE file in the root of the source
+- *  tree. An additional intellectual property rights grant can be found
+- *  in the file PATENTS.  All contributing project authors may
+- *  be found in the AUTHORS file in the root of the source tree.
+- */
+-
+-#import "RTCDefaultShader.h"
+-
+-#if TARGET_OS_IPHONE
+-#import <OpenGLES/ES3/gl.h>
+-#else
+-#import <OpenGL/gl3.h>
+-#endif
+-
+-#import "RTCOpenGLDefines.h"
+-#import "RTCShader.h"
+-#import "base/RTCLogging.h"
+-
+-#include "absl/types/optional.h"
+-
+-static const int kYTextureUnit = 0;
+-static const int kUTextureUnit = 1;
+-static const int kVTextureUnit = 2;
+-static const int kUvTextureUnit = 1;
+-
+-// Fragment shader converts YUV values from input textures into a final RGB
+-// pixel. The conversion formula is from http://www.fourcc.org/fccyvrgb.php.
+-static const char kI420FragmentShaderSource[] =
+-  SHADER_VERSION
+-  "precision highp float;"
+-  FRAGMENT_SHADER_IN " vec2 v_texcoord;\n"
+-  "uniform lowp sampler2D s_textureY;\n"
+-  "uniform lowp sampler2D s_textureU;\n"
+-  "uniform lowp sampler2D s_textureV;\n"
+-  FRAGMENT_SHADER_OUT
+-  "void main() {\n"
+-  "    float y, u, v, r, g, b;\n"
+-  "    y = " FRAGMENT_SHADER_TEXTURE "(s_textureY, v_texcoord).r;\n"
+-  "    u = " FRAGMENT_SHADER_TEXTURE "(s_textureU, v_texcoord).r;\n"
+-  "    v = " FRAGMENT_SHADER_TEXTURE "(s_textureV, v_texcoord).r;\n"
+-  "    u = u - 0.5;\n"
+-  "    v = v - 0.5;\n"
+-  "    r = y + 1.403 * v;\n"
+-  "    g = y - 0.344 * u - 0.714 * v;\n"
+-  "    b = y + 1.770 * u;\n"
+-  "    " FRAGMENT_SHADER_COLOR " = vec4(r, g, b, 1.0);\n"
+-  "  }\n";
+-
+-static const char kNV12FragmentShaderSource[] =
+-  SHADER_VERSION
+-  "precision mediump float;"
+-  FRAGMENT_SHADER_IN " vec2 v_texcoord;\n"
+-  "uniform lowp sampler2D s_textureY;\n"
+-  "uniform lowp sampler2D s_textureUV;\n"
+-  FRAGMENT_SHADER_OUT
+-  "void main() {\n"
+-  "    mediump float y;\n"
+-  "    mediump vec2 uv;\n"
+-  "    y = " FRAGMENT_SHADER_TEXTURE "(s_textureY, v_texcoord).r;\n"
+-  "    uv = " FRAGMENT_SHADER_TEXTURE "(s_textureUV, v_texcoord).ra -\n"
+-  "        vec2(0.5, 0.5);\n"
+-  "    " FRAGMENT_SHADER_COLOR " = vec4(y + 1.403 * uv.y,\n"
+-  "                                     y - 0.344 * uv.x - 0.714 * uv.y,\n"
+-  "                                     y + 1.770 * uv.x,\n"
+-  "                                     1.0);\n"
+-  "  }\n";
+-
+-@implementation RTCDefaultShader {
+-  GLuint _vertexBuffer;
+-  GLuint _vertexArray;
+-  // Store current rotation and only upload new vertex data when rotation changes.
+-  absl::optional<RTCVideoRotation> _currentRotation;
+-
+-  GLuint _i420Program;
+-  GLuint _nv12Program;
+-}
+-
+-- (void)dealloc {
+-  glDeleteProgram(_i420Program);
+-  glDeleteProgram(_nv12Program);
+-  glDeleteBuffers(1, &_vertexBuffer);
+-  glDeleteVertexArrays(1, &_vertexArray);
+-}
+-
+-- (BOOL)createAndSetupI420Program {
+-  NSAssert(!_i420Program, @"I420 program already created");
+-  _i420Program = RTCCreateProgramFromFragmentSource(kI420FragmentShaderSource);
+-  if (!_i420Program) {
+-    return NO;
+-  }
+-  GLint ySampler = glGetUniformLocation(_i420Program, "s_textureY");
+-  GLint uSampler = glGetUniformLocation(_i420Program, "s_textureU");
+-  GLint vSampler = glGetUniformLocation(_i420Program, "s_textureV");
+-
+-  if (ySampler < 0 || uSampler < 0 || vSampler < 0) {
+-    RTCLog(@"Failed to get uniform variable locations in I420 shader");
+-    glDeleteProgram(_i420Program);
+-    _i420Program = 0;
+-    return NO;
+-  }
+-
+-  glUseProgram(_i420Program);
+-  glUniform1i(ySampler, kYTextureUnit);
+-  glUniform1i(uSampler, kUTextureUnit);
+-  glUniform1i(vSampler, kVTextureUnit);
+-
+-  return YES;
+-}
+-
+-- (BOOL)createAndSetupNV12Program {
+-  NSAssert(!_nv12Program, @"NV12 program already created");
+-  _nv12Program = RTCCreateProgramFromFragmentSource(kNV12FragmentShaderSource);
+-  if (!_nv12Program) {
+-    return NO;
+-  }
+-  GLint ySampler = glGetUniformLocation(_nv12Program, "s_textureY");
+-  GLint uvSampler = glGetUniformLocation(_nv12Program, "s_textureUV");
+-
+-  if (ySampler < 0 || uvSampler < 0) {
+-    RTCLog(@"Failed to get uniform variable locations in NV12 shader");
+-    glDeleteProgram(_nv12Program);
+-    _nv12Program = 0;
+-    return NO;
+-  }
+-
+-  glUseProgram(_nv12Program);
+-  glUniform1i(ySampler, kYTextureUnit);
+-  glUniform1i(uvSampler, kUvTextureUnit);
+-
+-  return YES;
+-}
+-
+-- (BOOL)prepareVertexBufferWithRotation:(RTCVideoRotation)rotation {
+-  if (!_vertexBuffer && !RTCCreateVertexBuffer(&_vertexBuffer, &_vertexArray)) {
+-    RTCLog(@"Failed to setup vertex buffer");
+-    return NO;
+-  }
+-#if !TARGET_OS_IPHONE
+-  glBindVertexArray(_vertexArray);
+-#endif
+-  glBindBuffer(GL_ARRAY_BUFFER, _vertexBuffer);
+-  if (!_currentRotation || rotation != *_currentRotation) {
+-    _currentRotation = absl::optional<RTCVideoRotation>(rotation);
+-    RTCSetVertexData(*_currentRotation);
+-  }
+-  return YES;
+-}
+-
+-- (void)applyShadingForFrameWithWidth:(int)width
+-                               height:(int)height
+-                             rotation:(RTCVideoRotation)rotation
+-                               yPlane:(GLuint)yPlane
+-                               uPlane:(GLuint)uPlane
+-                               vPlane:(GLuint)vPlane {
+-  if (![self prepareVertexBufferWithRotation:rotation]) {
+-    return;
+-  }
+-
+-  if (!_i420Program && ![self createAndSetupI420Program]) {
+-    RTCLog(@"Failed to setup I420 program");
+-    return;
+-  }
+-
+-  glUseProgram(_i420Program);
+-
+-  glActiveTexture(static_cast<GLenum>(GL_TEXTURE0 + kYTextureUnit));
+-  glBindTexture(GL_TEXTURE_2D, yPlane);
+-
+-  glActiveTexture(static_cast<GLenum>(GL_TEXTURE0 + kUTextureUnit));
+-  glBindTexture(GL_TEXTURE_2D, uPlane);
+-
+-  glActiveTexture(static_cast<GLenum>(GL_TEXTURE0 + kVTextureUnit));
+-  glBindTexture(GL_TEXTURE_2D, vPlane);
+-
+-  glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+-}
+-
+-- (void)applyShadingForFrameWithWidth:(int)width
+-                               height:(int)height
+-                             rotation:(RTCVideoRotation)rotation
+-                               yPlane:(GLuint)yPlane
+-                              uvPlane:(GLuint)uvPlane {
+-  if (![self prepareVertexBufferWithRotation:rotation]) {
+-    return;
+-  }
+-
+-  if (!_nv12Program && ![self createAndSetupNV12Program]) {
+-    RTCLog(@"Failed to setup NV12 shader");
+-    return;
+-  }
+-
+-  glUseProgram(_nv12Program);
+-
+-  glActiveTexture(static_cast<GLenum>(GL_TEXTURE0 + kYTextureUnit));
+-  glBindTexture(GL_TEXTURE_2D, yPlane);
+-
+-  glActiveTexture(static_cast<GLenum>(GL_TEXTURE0 + kUvTextureUnit));
+-  glBindTexture(GL_TEXTURE_2D, uvPlane);
+-
+-  glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+-}
+-
+-@end
+diff -ruN -x \ com.unity.webrtc/src/sdk/objc/components/renderer/opengl/RTCEAGLVideoView.h com.unity.webrtc.updated/src/sdk/objc/components/renderer/opengl/RTCEAGLVideoView.h
+--- com.unity.webrtc/src/sdk/objc/components/renderer/opengl/RTCEAGLVideoView.h	2025-08-13 16:29:55
++++ com.unity.webrtc.updated/src/sdk/objc/components/renderer/opengl/RTCEAGLVideoView.h	2025-08-12 13:20:06
+@@ -1,45 +0,0 @@
+-/*
+- *  Copyright 2015 The WebRTC project authors. All Rights Reserved.
+- *
+- *  Use of this source code is governed by a BSD-style license
+- *  that can be found in the LICENSE file in the root of the source
+- *  tree. An additional intellectual property rights grant can be found
+- *  in the file PATENTS.  All contributing project authors may
+- *  be found in the AUTHORS file in the root of the source tree.
+- */
+-
+-#import <Foundation/Foundation.h>
+-#import <UIKit/UIKit.h>
+-
+-#import "RTCMacros.h"
+-#import "RTCVideoRenderer.h"
+-#import "RTCVideoViewShading.h"
+-
+-NS_ASSUME_NONNULL_BEGIN
+-
+-@class RTC_OBJC_TYPE(RTCEAGLVideoView);
+-
+-/**
+- * RTCEAGLVideoView is an RTCVideoRenderer which renders video frames
+- * in its bounds using OpenGLES 2.0 or OpenGLES 3.0.
+- */
+-RTC_OBJC_EXPORT
+-NS_EXTENSION_UNAVAILABLE_IOS("Rendering not available in app extensions.")
+-@interface RTC_OBJC_TYPE (RTCEAGLVideoView) : UIView <RTC_OBJC_TYPE(RTCVideoRenderer)>
+-
+-@property(nonatomic, weak) id<RTC_OBJC_TYPE(RTCVideoViewDelegate)> delegate;
+-
+-- (instancetype)initWithFrame:(CGRect)frame
+-                       shader:(id<RTC_OBJC_TYPE(RTCVideoViewShading)>)shader
+-    NS_DESIGNATED_INITIALIZER;
+-
+-- (instancetype)initWithCoder:(NSCoder *)aDecoder
+-                       shader:(id<RTC_OBJC_TYPE(RTCVideoViewShading)>)shader
+-    NS_DESIGNATED_INITIALIZER;
+-
+-/** @abstract Wrapped RTCVideoRotation, or nil.
+- */
+-@property(nonatomic, nullable) NSValue *rotationOverride;
+-@end
+-
+-NS_ASSUME_NONNULL_END
+diff -ruN -x \ com.unity.webrtc/src/sdk/objc/components/renderer/opengl/RTCEAGLVideoView.m com.unity.webrtc.updated/src/sdk/objc/components/renderer/opengl/RTCEAGLVideoView.m
+--- com.unity.webrtc/src/sdk/objc/components/renderer/opengl/RTCEAGLVideoView.m	2025-08-13 16:29:55
++++ com.unity.webrtc.updated/src/sdk/objc/components/renderer/opengl/RTCEAGLVideoView.m	2025-08-12 13:20:11
+@@ -1,295 +0,0 @@
+-/*
+- *  Copyright 2015 The WebRTC project authors. All Rights Reserved.
+- *
+- *  Use of this source code is governed by a BSD-style license
+- *  that can be found in the LICENSE file in the root of the source
+- *  tree. An additional intellectual property rights grant can be found
+- *  in the file PATENTS.  All contributing project authors may
+- *  be found in the AUTHORS file in the root of the source tree.
+- */
+-
+-#import "RTCEAGLVideoView.h"
+-
+-#import <GLKit/GLKit.h>
+-
+-#import "RTCDefaultShader.h"
+-#import "RTCDisplayLinkTimer.h"
+-#import "RTCI420TextureCache.h"
+-#import "RTCNV12TextureCache.h"
+-#import "base/RTCLogging.h"
+-#import "base/RTCVideoFrame.h"
+-#import "base/RTCVideoFrameBuffer.h"
+-#import "components/video_frame_buffer/RTCCVPixelBuffer.h"
+-
+-// RTC_OBJC_TYPE(RTCEAGLVideoView) wraps a GLKView which is setup with
+-// enableSetNeedsDisplay = NO for the purpose of gaining control of
+-// exactly when to call -[GLKView display]. This need for extra
+-// control is required to avoid triggering method calls on GLKView
+-// that results in attempting to bind the underlying render buffer
+-// when the drawable size would be empty which would result in the
+-// error GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT. -[GLKView display] is
+-// the method that will trigger the binding of the render
+-// buffer. Because the standard behaviour of -[UIView setNeedsDisplay]
+-// is disabled for the reasons above, the RTC_OBJC_TYPE(RTCEAGLVideoView) maintains
+-// its own `isDirty` flag.
+-
+-@interface RTC_OBJC_TYPE (RTCEAGLVideoView)
+-()<GLKViewDelegate>
+-    // `videoFrame` is set when we receive a frame from a worker thread and is read
+-    // from the display link callback so atomicity is required.
+-    @property(atomic, strong) RTC_OBJC_TYPE(RTCVideoFrame) * videoFrame;
+-@property(nonatomic, readonly) GLKView *glkView;
+-@end
+-
+-@implementation RTC_OBJC_TYPE (RTCEAGLVideoView) {
+-  RTCDisplayLinkTimer *_timer;
+-  EAGLContext *_glContext;
+-  // This flag should only be set and read on the main thread (e.g. by
+-  // setNeedsDisplay)
+-  BOOL _isDirty;
+-  id<RTC_OBJC_TYPE(RTCVideoViewShading)> _shader;
+-  RTCNV12TextureCache *_nv12TextureCache;
+-  RTCI420TextureCache *_i420TextureCache;
+-  // As timestamps should be unique between frames, will store last
+-  // drawn frame timestamp instead of the whole frame to reduce memory usage.
+-  int64_t _lastDrawnFrameTimeStampNs;
+-}
+-
+-@synthesize delegate = _delegate;
+-@synthesize videoFrame = _videoFrame;
+-@synthesize glkView = _glkView;
+-@synthesize rotationOverride = _rotationOverride;
+-
+-- (instancetype)initWithFrame:(CGRect)frame {
+-  return [self initWithFrame:frame shader:[[RTCDefaultShader alloc] init]];
+-}
+-
+-- (instancetype)initWithCoder:(NSCoder *)aDecoder {
+-  return [self initWithCoder:aDecoder shader:[[RTCDefaultShader alloc] init]];
+-}
+-
+-- (instancetype)initWithFrame:(CGRect)frame shader:(id<RTC_OBJC_TYPE(RTCVideoViewShading)>)shader {
+-  if (self = [super initWithFrame:frame]) {
+-    _shader = shader;
+-    if (![self configure]) {
+-      return nil;
+-    }
+-  }
+-  return self;
+-}
+-
+-- (instancetype)initWithCoder:(NSCoder *)aDecoder
+-                       shader:(id<RTC_OBJC_TYPE(RTCVideoViewShading)>)shader {
+-  if (self = [super initWithCoder:aDecoder]) {
+-    _shader = shader;
+-    if (![self configure]) {
+-      return nil;
+-    }
+-  }
+-  return self;
+-}
+-
+-- (BOOL)configure {
+-  EAGLContext *glContext =
+-    [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3];
+-  if (!glContext) {
+-    glContext = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES2];
+-  }
+-  if (!glContext) {
+-    RTCLogError(@"Failed to create EAGLContext");
+-    return NO;
+-  }
+-  _glContext = glContext;
+-
+-  // GLKView manages a framebuffer for us.
+-  _glkView = [[GLKView alloc] initWithFrame:CGRectZero
+-                                    context:_glContext];
+-  _glkView.drawableColorFormat = GLKViewDrawableColorFormatRGBA8888;
+-  _glkView.drawableDepthFormat = GLKViewDrawableDepthFormatNone;
+-  _glkView.drawableStencilFormat = GLKViewDrawableStencilFormatNone;
+-  _glkView.drawableMultisample = GLKViewDrawableMultisampleNone;
+-  _glkView.delegate = self;
+-  _glkView.layer.masksToBounds = YES;
+-  _glkView.enableSetNeedsDisplay = NO;
+-  [self addSubview:_glkView];
+-
+-  // Listen to application state in order to clean up OpenGL before app goes
+-  // away.
+-  NSNotificationCenter *notificationCenter =
+-    [NSNotificationCenter defaultCenter];
+-  [notificationCenter addObserver:self
+-                         selector:@selector(willResignActive)
+-                             name:UIApplicationWillResignActiveNotification
+-                           object:nil];
+-  [notificationCenter addObserver:self
+-                         selector:@selector(didBecomeActive)
+-                             name:UIApplicationDidBecomeActiveNotification
+-                           object:nil];
+-
+-  // Frames are received on a separate thread, so we poll for current frame
+-  // using a refresh rate proportional to screen refresh frequency. This
+-  // occurs on the main thread.
+-  __weak RTC_OBJC_TYPE(RTCEAGLVideoView) *weakSelf = self;
+-  _timer = [[RTCDisplayLinkTimer alloc] initWithTimerHandler:^{
+-    RTC_OBJC_TYPE(RTCEAGLVideoView) *strongSelf = weakSelf;
+-    [strongSelf displayLinkTimerDidFire];
+-  }];
+-  if ([[UIApplication sharedApplication] applicationState] == UIApplicationStateActive) {
+-    [self setupGL];
+-  }
+-  return YES;
+-}
+-
+-- (void)setMultipleTouchEnabled:(BOOL)multipleTouchEnabled {
+-    [super setMultipleTouchEnabled:multipleTouchEnabled];
+-    _glkView.multipleTouchEnabled = multipleTouchEnabled;
+-}
+-
+-- (void)dealloc {
+-  [[NSNotificationCenter defaultCenter] removeObserver:self];
+-  UIApplicationState appState =
+-      [UIApplication sharedApplication].applicationState;
+-  if (appState == UIApplicationStateActive) {
+-    [self teardownGL];
+-  }
+-  [_timer invalidate];
+-  [self ensureGLContext];
+-  _shader = nil;
+-  if (_glContext && [EAGLContext currentContext] == _glContext) {
+-    [EAGLContext setCurrentContext:nil];
+-  }
+-}
+-
+-#pragma mark - UIView
+-
+-- (void)setNeedsDisplay {
+-  [super setNeedsDisplay];
+-  _isDirty = YES;
+-}
+-
+-- (void)setNeedsDisplayInRect:(CGRect)rect {
+-  [super setNeedsDisplayInRect:rect];
+-  _isDirty = YES;
+-}
+-
+-- (void)layoutSubviews {
+-  [super layoutSubviews];
+-  _glkView.frame = self.bounds;
+-}
+-
+-#pragma mark - GLKViewDelegate
+-
+-// This method is called when the GLKView's content is dirty and needs to be
+-// redrawn. This occurs on main thread.
+-- (void)glkView:(GLKView *)view drawInRect:(CGRect)rect {
+-  // The renderer will draw the frame to the framebuffer corresponding to the
+-  // one used by `view`.
+-  RTC_OBJC_TYPE(RTCVideoFrame) *frame = self.videoFrame;
+-  if (!frame || frame.timeStampNs == _lastDrawnFrameTimeStampNs) {
+-    return;
+-  }
+-  RTCVideoRotation rotation = frame.rotation;
+-  if(_rotationOverride != nil) {
+-    [_rotationOverride getValue: &rotation];
+-  }
+-  [self ensureGLContext];
+-  glClear(GL_COLOR_BUFFER_BIT);
+-  if ([frame.buffer isKindOfClass:[RTC_OBJC_TYPE(RTCCVPixelBuffer) class]]) {
+-    if (!_nv12TextureCache) {
+-      _nv12TextureCache = [[RTCNV12TextureCache alloc] initWithContext:_glContext];
+-    }
+-    if (_nv12TextureCache) {
+-      [_nv12TextureCache uploadFrameToTextures:frame];
+-      [_shader applyShadingForFrameWithWidth:frame.width
+-                                      height:frame.height
+-                                    rotation:rotation
+-                                      yPlane:_nv12TextureCache.yTexture
+-                                     uvPlane:_nv12TextureCache.uvTexture];
+-      [_nv12TextureCache releaseTextures];
+-
+-      _lastDrawnFrameTimeStampNs = self.videoFrame.timeStampNs;
+-    }
+-  } else {
+-    if (!_i420TextureCache) {
+-      _i420TextureCache = [[RTCI420TextureCache alloc] initWithContext:_glContext];
+-    }
+-    [_i420TextureCache uploadFrameToTextures:frame];
+-    [_shader applyShadingForFrameWithWidth:frame.width
+-                                    height:frame.height
+-                                  rotation:rotation
+-                                    yPlane:_i420TextureCache.yTexture
+-                                    uPlane:_i420TextureCache.uTexture
+-                                    vPlane:_i420TextureCache.vTexture];
+-
+-    _lastDrawnFrameTimeStampNs = self.videoFrame.timeStampNs;
+-  }
+-}
+-
+-#pragma mark - RTC_OBJC_TYPE(RTCVideoRenderer)
+-
+-// These methods may be called on non-main thread.
+-- (void)setSize:(CGSize)size {
+-  __weak RTC_OBJC_TYPE(RTCEAGLVideoView) *weakSelf = self;
+-  dispatch_async(dispatch_get_main_queue(), ^{
+-    RTC_OBJC_TYPE(RTCEAGLVideoView) *strongSelf = weakSelf;
+-    [strongSelf.delegate videoView:strongSelf didChangeVideoSize:size];
+-  });
+-}
+-
+-- (void)renderFrame:(RTC_OBJC_TYPE(RTCVideoFrame) *)frame {
+-  self.videoFrame = frame;
+-}
+-
+-#pragma mark - Private
+-
+-- (void)displayLinkTimerDidFire {
+-  // Don't render unless video frame have changed or the view content
+-  // has explicitly been marked dirty.
+-  if (!_isDirty && _lastDrawnFrameTimeStampNs == self.videoFrame.timeStampNs) {
+-    return;
+-  }
+-
+-  // Always reset isDirty at this point, even if -[GLKView display]
+-  // won't be called in the case the drawable size is empty.
+-  _isDirty = NO;
+-
+-  // Only call -[GLKView display] if the drawable size is
+-  // non-empty. Calling display will make the GLKView setup its
+-  // render buffer if necessary, but that will fail with error
+-  // GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT if size is empty.
+-  if (self.bounds.size.width > 0 && self.bounds.size.height > 0) {
+-    [_glkView display];
+-  }
+-}
+-
+-- (void)setupGL {
+-  [self ensureGLContext];
+-  glDisable(GL_DITHER);
+-  _timer.isPaused = NO;
+-}
+-
+-- (void)teardownGL {
+-  self.videoFrame = nil;
+-  _timer.isPaused = YES;
+-  [_glkView deleteDrawable];
+-  [self ensureGLContext];
+-  _nv12TextureCache = nil;
+-  _i420TextureCache = nil;
+-}
+-
+-- (void)didBecomeActive {
+-  [self setupGL];
+-}
+-
+-- (void)willResignActive {
+-  [self teardownGL];
+-}
+-
+-- (void)ensureGLContext {
+-  NSAssert(_glContext, @"context shouldn't be nil");
+-  if ([EAGLContext currentContext] != _glContext) {
+-    [EAGLContext setCurrentContext:_glContext];
+-  }
+-}
+-
+-@end
+diff -ruN -x \ com.unity.webrtc/src/sdk/objc/components/renderer/opengl/RTCI420TextureCache.h com.unity.webrtc.updated/src/sdk/objc/components/renderer/opengl/RTCI420TextureCache.h
+--- com.unity.webrtc/src/sdk/objc/components/renderer/opengl/RTCI420TextureCache.h	2025-08-13 16:29:55
++++ com.unity.webrtc.updated/src/sdk/objc/components/renderer/opengl/RTCI420TextureCache.h	2025-08-12 13:35:21
+@@ -1,25 +0,0 @@
+-/*
+- *  Copyright 2017 The WebRTC project authors. All Rights Reserved.
+- *
+- *  Use of this source code is governed by a BSD-style license
+- *  that can be found in the LICENSE file in the root of the source
+- *  tree. An additional intellectual property rights grant can be found
+- *  in the file PATENTS.  All contributing project authors may
+- *  be found in the AUTHORS file in the root of the source tree.
+- */
+-
+-#import "RTCOpenGLDefines.h"
+-#import "base/RTCVideoFrame.h"
+-
+-@interface RTCI420TextureCache : NSObject
+-
+-@property(nonatomic, readonly) GLuint yTexture;
+-@property(nonatomic, readonly) GLuint uTexture;
+-@property(nonatomic, readonly) GLuint vTexture;
+-
+-- (instancetype)init NS_UNAVAILABLE;
+-- (instancetype)initWithContext:(GlContextType *)context NS_DESIGNATED_INITIALIZER;
+-
+-- (void)uploadFrameToTextures:(RTC_OBJC_TYPE(RTCVideoFrame) *)frame;
+-
+-@end
+diff -ruN -x \ com.unity.webrtc/src/sdk/objc/components/renderer/opengl/RTCI420TextureCache.mm com.unity.webrtc.updated/src/sdk/objc/components/renderer/opengl/RTCI420TextureCache.mm
+--- com.unity.webrtc/src/sdk/objc/components/renderer/opengl/RTCI420TextureCache.mm	2025-08-13 16:29:55
++++ com.unity.webrtc.updated/src/sdk/objc/components/renderer/opengl/RTCI420TextureCache.mm	2025-08-12 13:35:16
+@@ -1,157 +0,0 @@
+-/*
+- *  Copyright 2017 The WebRTC project authors. All Rights Reserved.
+- *
+- *  Use of this source code is governed by a BSD-style license
+- *  that can be found in the LICENSE file in the root of the source
+- *  tree. An additional intellectual property rights grant can be found
+- *  in the file PATENTS.  All contributing project authors may
+- *  be found in the AUTHORS file in the root of the source tree.
+- */
+-
+-#import "RTCI420TextureCache.h"
+-
+-#if TARGET_OS_IPHONE
+-#import <OpenGLES/ES3/gl.h>
+-#else
+-#import <OpenGL/gl3.h>
+-#endif
+-
+-#import "base/RTCI420Buffer.h"
+-#import "base/RTCVideoFrameBuffer.h"
+-
+-#include <vector>
+-
+-// Two sets of 3 textures are used here, one for each of the Y, U and V planes. Having two sets
+-// alleviates CPU blockage in the event that the GPU is asked to render to a texture that is already
+-// in use.
+-static const GLsizei kNumTextureSets = 2;
+-static const GLsizei kNumTexturesPerSet = 3;
+-static const GLsizei kNumTextures = kNumTexturesPerSet * kNumTextureSets;
+-
+-@implementation RTCI420TextureCache {
+-  BOOL _hasUnpackRowLength;
+-  GLint _currentTextureSet;
+-  // Handles for OpenGL constructs.
+-  GLuint _textures[kNumTextures];
+-  // Used to create a non-padded plane for GPU upload when we receive padded frames.
+-  std::vector<uint8_t> _planeBuffer;
+-}
+-
+-- (GLuint)yTexture {
+-  return _textures[_currentTextureSet * kNumTexturesPerSet];
+-}
+-
+-- (GLuint)uTexture {
+-  return _textures[_currentTextureSet * kNumTexturesPerSet + 1];
+-}
+-
+-- (GLuint)vTexture {
+-  return _textures[_currentTextureSet * kNumTexturesPerSet + 2];
+-}
+-
+-- (instancetype)initWithContext:(GlContextType *)context {
+-  if (self = [super init]) {
+-#if TARGET_OS_IPHONE
+-    _hasUnpackRowLength = (context.API == kEAGLRenderingAPIOpenGLES3);
+-#else
+-    _hasUnpackRowLength = YES;
+-#endif
+-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+-
+-    [self setupTextures];
+-  }
+-  return self;
+-}
+-
+-- (void)dealloc {
+-  glDeleteTextures(kNumTextures, _textures);
+-}
+-
+-- (void)setupTextures {
+-  glGenTextures(kNumTextures, _textures);
+-  // Set parameters for each of the textures we created.
+-  for (GLsizei i = 0; i < kNumTextures; i++) {
+-    glBindTexture(GL_TEXTURE_2D, _textures[i]);
+-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+-  }
+-}
+-
+-- (void)uploadPlane:(const uint8_t *)plane
+-            texture:(GLuint)texture
+-              width:(size_t)width
+-             height:(size_t)height
+-             stride:(int32_t)stride {
+-  glBindTexture(GL_TEXTURE_2D, texture);
+-
+-  const uint8_t *uploadPlane = plane;
+-  if ((size_t)stride != width) {
+-   if (_hasUnpackRowLength) {
+-      // GLES3 allows us to specify stride.
+-      glPixelStorei(GL_UNPACK_ROW_LENGTH, stride);
+-      glTexImage2D(GL_TEXTURE_2D,
+-                   0,
+-                   RTC_PIXEL_FORMAT,
+-                   static_cast<GLsizei>(width),
+-                   static_cast<GLsizei>(height),
+-                   0,
+-                   RTC_PIXEL_FORMAT,
+-                   GL_UNSIGNED_BYTE,
+-                   uploadPlane);
+-      glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+-      return;
+-    } else {
+-      // Make an unpadded copy and upload that instead. Quick profiling showed
+-      // that this is faster than uploading row by row using glTexSubImage2D.
+-      uint8_t *unpaddedPlane = _planeBuffer.data();
+-      for (size_t y = 0; y < height; ++y) {
+-        memcpy(unpaddedPlane + y * width, plane + y * stride, width);
+-      }
+-      uploadPlane = unpaddedPlane;
+-    }
+-  }
+-  glTexImage2D(GL_TEXTURE_2D,
+-               0,
+-               RTC_PIXEL_FORMAT,
+-               static_cast<GLsizei>(width),
+-               static_cast<GLsizei>(height),
+-               0,
+-               RTC_PIXEL_FORMAT,
+-               GL_UNSIGNED_BYTE,
+-               uploadPlane);
+-}
+-
+-- (void)uploadFrameToTextures:(RTC_OBJC_TYPE(RTCVideoFrame) *)frame {
+-  _currentTextureSet = (_currentTextureSet + 1) % kNumTextureSets;
+-
+-  id<RTC_OBJC_TYPE(RTCI420Buffer)> buffer = [frame.buffer toI420];
+-
+-  const int chromaWidth = buffer.chromaWidth;
+-  const int chromaHeight = buffer.chromaHeight;
+-  if (buffer.strideY != frame.width || buffer.strideU != chromaWidth ||
+-      buffer.strideV != chromaWidth) {
+-    _planeBuffer.resize(buffer.width * buffer.height);
+-  }
+-
+-  [self uploadPlane:buffer.dataY
+-            texture:self.yTexture
+-              width:buffer.width
+-             height:buffer.height
+-             stride:buffer.strideY];
+-
+-  [self uploadPlane:buffer.dataU
+-            texture:self.uTexture
+-              width:chromaWidth
+-             height:chromaHeight
+-             stride:buffer.strideU];
+-
+-  [self uploadPlane:buffer.dataV
+-            texture:self.vTexture
+-              width:chromaWidth
+-             height:chromaHeight
+-             stride:buffer.strideV];
+-}
+-
+-@end
+diff -ruN -x \ com.unity.webrtc/src/sdk/objc/components/renderer/opengl/RTCNV12TextureCache.h com.unity.webrtc.updated/src/sdk/objc/components/renderer/opengl/RTCNV12TextureCache.h
+--- com.unity.webrtc/src/sdk/objc/components/renderer/opengl/RTCNV12TextureCache.h	2025-08-13 16:29:55
++++ com.unity.webrtc.updated/src/sdk/objc/components/renderer/opengl/RTCNV12TextureCache.h	2025-08-12 13:29:19
+@@ -1,33 +1 @@
+-/*
+- *  Copyright 2017 The WebRTC project authors. All Rights Reserved.
+- *
+- *  Use of this source code is governed by a BSD-style license
+- *  that can be found in the LICENSE file in the root of the source
+- *  tree. An additional intellectual property rights grant can be found
+- *  in the file PATENTS.  All contributing project authors may
+- *  be found in the AUTHORS file in the root of the source tree.
+- */
+ 
+-#import <GLKit/GLKit.h>
+-
+-#import "base/RTCMacros.h"
+-
+-@class RTC_OBJC_TYPE(RTCVideoFrame);
+-
+-NS_ASSUME_NONNULL_BEGIN
+-
+-@interface RTCNV12TextureCache : NSObject
+-
+-@property(nonatomic, readonly) GLuint yTexture;
+-@property(nonatomic, readonly) GLuint uvTexture;
+-
+-- (instancetype)init NS_UNAVAILABLE;
+-- (nullable instancetype)initWithContext:(EAGLContext *)context NS_DESIGNATED_INITIALIZER;
+-
+-- (BOOL)uploadFrameToTextures:(RTC_OBJC_TYPE(RTCVideoFrame) *)frame;
+-
+-- (void)releaseTextures;
+-
+-@end
+-
+-NS_ASSUME_NONNULL_END
+diff -ruN -x \ com.unity.webrtc/src/sdk/objc/components/renderer/opengl/RTCNV12TextureCache.m com.unity.webrtc.updated/src/sdk/objc/components/renderer/opengl/RTCNV12TextureCache.m
+--- com.unity.webrtc/src/sdk/objc/components/renderer/opengl/RTCNV12TextureCache.m	2025-08-13 16:29:55
++++ com.unity.webrtc.updated/src/sdk/objc/components/renderer/opengl/RTCNV12TextureCache.m	2025-08-12 13:29:24
+@@ -1,113 +0,0 @@
+-/*
+- *  Copyright 2017 The WebRTC project authors. All Rights Reserved.
+- *
+- *  Use of this source code is governed by a BSD-style license
+- *  that can be found in the LICENSE file in the root of the source
+- *  tree. An additional intellectual property rights grant can be found
+- *  in the file PATENTS.  All contributing project authors may
+- *  be found in the AUTHORS file in the root of the source tree.
+- */
+-
+-#import "RTCNV12TextureCache.h"
+-
+-#import "base/RTCVideoFrame.h"
+-#import "base/RTCVideoFrameBuffer.h"
+-#import "components/video_frame_buffer/RTCCVPixelBuffer.h"
+-
+-@implementation RTCNV12TextureCache {
+-  CVOpenGLESTextureCacheRef _textureCache;
+-  CVOpenGLESTextureRef _yTextureRef;
+-  CVOpenGLESTextureRef _uvTextureRef;
+-}
+-
+-- (GLuint)yTexture {
+-  return CVOpenGLESTextureGetName(_yTextureRef);
+-}
+-
+-- (GLuint)uvTexture {
+-  return CVOpenGLESTextureGetName(_uvTextureRef);
+-}
+-
+-- (instancetype)initWithContext:(EAGLContext *)context {
+-  if (self = [super init]) {
+-    CVReturn ret = CVOpenGLESTextureCacheCreate(
+-        kCFAllocatorDefault, NULL,
+-#if COREVIDEO_USE_EAGLCONTEXT_CLASS_IN_API
+-        context,
+-#else
+-        (__bridge void *)context,
+-#endif
+-        NULL, &_textureCache);
+-    if (ret != kCVReturnSuccess) {
+-      self = nil;
+-    }
+-  }
+-  return self;
+-}
+-
+-- (BOOL)loadTexture:(CVOpenGLESTextureRef *)textureOut
+-        pixelBuffer:(CVPixelBufferRef)pixelBuffer
+-         planeIndex:(int)planeIndex
+-        pixelFormat:(GLenum)pixelFormat {
+-  const int width = CVPixelBufferGetWidthOfPlane(pixelBuffer, planeIndex);
+-  const int height = CVPixelBufferGetHeightOfPlane(pixelBuffer, planeIndex);
+-
+-  if (*textureOut) {
+-    CFRelease(*textureOut);
+-    *textureOut = nil;
+-  }
+-  CVReturn ret = CVOpenGLESTextureCacheCreateTextureFromImage(
+-      kCFAllocatorDefault, _textureCache, pixelBuffer, NULL, GL_TEXTURE_2D, pixelFormat, width,
+-      height, pixelFormat, GL_UNSIGNED_BYTE, planeIndex, textureOut);
+-  if (ret != kCVReturnSuccess) {
+-    if (*textureOut) {
+-      CFRelease(*textureOut);
+-      *textureOut = nil;
+-    }
+-    return NO;
+-  }
+-  NSAssert(CVOpenGLESTextureGetTarget(*textureOut) == GL_TEXTURE_2D,
+-           @"Unexpected GLES texture target");
+-  glBindTexture(GL_TEXTURE_2D, CVOpenGLESTextureGetName(*textureOut));
+-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+-  return YES;
+-}
+-
+-- (BOOL)uploadFrameToTextures:(RTC_OBJC_TYPE(RTCVideoFrame) *)frame {
+-  NSAssert([frame.buffer isKindOfClass:[RTC_OBJC_TYPE(RTCCVPixelBuffer) class]],
+-           @"frame must be CVPixelBuffer backed");
+-  RTC_OBJC_TYPE(RTCCVPixelBuffer) *rtcPixelBuffer = (RTC_OBJC_TYPE(RTCCVPixelBuffer) *)frame.buffer;
+-  CVPixelBufferRef pixelBuffer = rtcPixelBuffer.pixelBuffer;
+-  return [self loadTexture:&_yTextureRef
+-               pixelBuffer:pixelBuffer
+-                planeIndex:0
+-               pixelFormat:GL_LUMINANCE] &&
+-         [self loadTexture:&_uvTextureRef
+-               pixelBuffer:pixelBuffer
+-                planeIndex:1
+-               pixelFormat:GL_LUMINANCE_ALPHA];
+-}
+-
+-- (void)releaseTextures {
+-  if (_uvTextureRef) {
+-    CFRelease(_uvTextureRef);
+-    _uvTextureRef = nil;
+-  }
+-  if (_yTextureRef) {
+-    CFRelease(_yTextureRef);
+-    _yTextureRef = nil;
+-  }
+-}
+-
+-- (void)dealloc {
+-  [self releaseTextures];
+-  if (_textureCache) {
+-    CFRelease(_textureCache);
+-    _textureCache = nil;
+-  }
+-}
+-
+-@end
+diff -ruN -x \ com.unity.webrtc/src/sdk/objc/components/renderer/opengl/RTCShader.h com.unity.webrtc.updated/src/sdk/objc/components/renderer/opengl/RTCShader.h
+--- com.unity.webrtc/src/sdk/objc/components/renderer/opengl/RTCShader.h	2025-08-13 16:12:44
++++ com.unity.webrtc.updated/src/sdk/objc/components/renderer/opengl/RTCShader.h	2025-08-12 13:36:16
+@@ -1,21 +0,0 @@
+-/*
+- *  Copyright 2016 The WebRTC project authors. All Rights Reserved.
+- *
+- *  Use of this source code is governed by a BSD-style license
+- *  that can be found in the LICENSE file in the root of the source
+- *  tree. An additional intellectual property rights grant can be found
+- *  in the file PATENTS.  All contributing project authors may
+- *  be found in the AUTHORS file in the root of the source tree.
+- */
+-
+-#import "base/RTCVideoFrame.h"
+-
+-RTC_EXTERN const char kRTCVertexShaderSource[];
+-
+-RTC_EXTERN GLuint RTCCreateShader(GLenum type, const GLchar* source);
+-RTC_EXTERN GLuint RTCCreateProgram(GLuint vertexShader, GLuint fragmentShader);
+-RTC_EXTERN GLuint
+-RTCCreateProgramFromFragmentSource(const char fragmentShaderSource[]);
+-RTC_EXTERN BOOL RTCCreateVertexBuffer(GLuint* vertexBuffer,
+-                                      GLuint* vertexArray);
+-RTC_EXTERN void RTCSetVertexData(RTCVideoRotation rotation);
+diff -ruN -x \ com.unity.webrtc/src/sdk/objc/components/renderer/opengl/RTCShader.mm com.unity.webrtc.updated/src/sdk/objc/components/renderer/opengl/RTCShader.mm
+--- com.unity.webrtc/src/sdk/objc/components/renderer/opengl/RTCShader.mm	2025-08-13 16:29:55
++++ com.unity.webrtc.updated/src/sdk/objc/components/renderer/opengl/RTCShader.mm	2025-08-12 13:36:13
+@@ -1,189 +0,0 @@
+-/*
+- *  Copyright 2016 The WebRTC project authors. All Rights Reserved.
+- *
+- *  Use of this source code is governed by a BSD-style license
+- *  that can be found in the LICENSE file in the root of the source
+- *  tree. An additional intellectual property rights grant can be found
+- *  in the file PATENTS.  All contributing project authors may
+- *  be found in the AUTHORS file in the root of the source tree.
+- */
+-
+-#import "RTCShader.h"
+-
+-#if TARGET_OS_IPHONE
+-#import <OpenGLES/ES3/gl.h>
+-#else
+-#import <OpenGL/gl3.h>
+-#endif
+-
+-#include <algorithm>
+-#include <array>
+-#include <memory>
+-
+-#import "RTCOpenGLDefines.h"
+-
+-#include "rtc_base/checks.h"
+-#include "rtc_base/logging.h"
+-
+-// Vertex shader doesn't do anything except pass coordinates through.
+-const char kRTCVertexShaderSource[] =
+-  SHADER_VERSION
+-  VERTEX_SHADER_IN " vec2 position;\n"
+-  VERTEX_SHADER_IN " vec2 texcoord;\n"
+-  VERTEX_SHADER_OUT " vec2 v_texcoord;\n"
+-  "void main() {\n"
+-  "    gl_Position = vec4(position.x, position.y, 0.0, 1.0);\n"
+-  "    v_texcoord = texcoord;\n"
+-  "}\n";
+-
+-// Compiles a shader of the given `type` with GLSL source `source` and returns
+-// the shader handle or 0 on error.
+-GLuint RTCCreateShader(GLenum type, const GLchar *source) {
+-  GLuint shader = glCreateShader(type);
+-  if (!shader) {
+-    return 0;
+-  }
+-  glShaderSource(shader, 1, &source, NULL);
+-  glCompileShader(shader);
+-  GLint compileStatus = GL_FALSE;
+-  glGetShaderiv(shader, GL_COMPILE_STATUS, &compileStatus);
+-  if (compileStatus == GL_FALSE) {
+-    GLint logLength = 0;
+-    // The null termination character is included in the returned log length.
+-    glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
+-    if (logLength > 0) {
+-      std::unique_ptr<char[]> compileLog(new char[logLength]);
+-      // The returned string is null terminated.
+-      glGetShaderInfoLog(shader, logLength, NULL, compileLog.get());
+-      RTC_LOG(LS_ERROR) << "Shader compile error: " << compileLog.get();
+-    }
+-    glDeleteShader(shader);
+-    shader = 0;
+-  }
+-  return shader;
+-}
+-
+-// Links a shader program with the given vertex and fragment shaders and
+-// returns the program handle or 0 on error.
+-GLuint RTCCreateProgram(GLuint vertexShader, GLuint fragmentShader) {
+-  if (vertexShader == 0 || fragmentShader == 0) {
+-    return 0;
+-  }
+-  GLuint program = glCreateProgram();
+-  if (!program) {
+-    return 0;
+-  }
+-  glAttachShader(program, vertexShader);
+-  glAttachShader(program, fragmentShader);
+-  glLinkProgram(program);
+-  GLint linkStatus = GL_FALSE;
+-  glGetProgramiv(program, GL_LINK_STATUS, &linkStatus);
+-  if (linkStatus == GL_FALSE) {
+-    glDeleteProgram(program);
+-    program = 0;
+-  }
+-  return program;
+-}
+-
+-// Creates and links a shader program with the given fragment shader source and
+-// a plain vertex shader. Returns the program handle or 0 on error.
+-GLuint RTCCreateProgramFromFragmentSource(const char fragmentShaderSource[]) {
+-  GLuint vertexShader = RTCCreateShader(GL_VERTEX_SHADER, kRTCVertexShaderSource);
+-  RTC_CHECK(vertexShader) << "failed to create vertex shader";
+-  GLuint fragmentShader =
+-      RTCCreateShader(GL_FRAGMENT_SHADER, fragmentShaderSource);
+-  RTC_CHECK(fragmentShader) << "failed to create fragment shader";
+-  GLuint program = RTCCreateProgram(vertexShader, fragmentShader);
+-  // Shaders are created only to generate program.
+-  if (vertexShader) {
+-    glDeleteShader(vertexShader);
+-  }
+-  if (fragmentShader) {
+-    glDeleteShader(fragmentShader);
+-  }
+-
+-  // Set vertex shader variables 'position' and 'texcoord' in program.
+-  GLint position = glGetAttribLocation(program, "position");
+-  GLint texcoord = glGetAttribLocation(program, "texcoord");
+-  if (position < 0 || texcoord < 0) {
+-    glDeleteProgram(program);
+-    return 0;
+-  }
+-
+-  // Read position attribute with size of 2 and stride of 4 beginning at the start of the array. The
+-  // last argument indicates offset of data within the vertex buffer.
+-  glVertexAttribPointer(position, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (void *)0);
+-  glEnableVertexAttribArray(position);
+-
+-  // Read texcoord attribute  with size of 2 and stride of 4 beginning at the first texcoord in the
+-  // array. The last argument indicates offset of data within the vertex buffer.
+-  glVertexAttribPointer(
+-      texcoord, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (void *)(2 * sizeof(GLfloat)));
+-  glEnableVertexAttribArray(texcoord);
+-
+-  return program;
+-}
+-
+-BOOL RTCCreateVertexBuffer(GLuint *vertexBuffer, GLuint *vertexArray) {
+-#if !TARGET_OS_IPHONE
+-  glGenVertexArrays(1, vertexArray);
+-  if (*vertexArray == 0) {
+-    return NO;
+-  }
+-  glBindVertexArray(*vertexArray);
+-#endif
+-  glGenBuffers(1, vertexBuffer);
+-  if (*vertexBuffer == 0) {
+-    glDeleteVertexArrays(1, vertexArray);
+-    return NO;
+-  }
+-  glBindBuffer(GL_ARRAY_BUFFER, *vertexBuffer);
+-  glBufferData(GL_ARRAY_BUFFER, 4 * 4 * sizeof(GLfloat), NULL, GL_DYNAMIC_DRAW);
+-  return YES;
+-}
+-
+-// Set vertex data to the currently bound vertex buffer.
+-void RTCSetVertexData(RTCVideoRotation rotation) {
+-  // When modelview and projection matrices are identity (default) the world is
+-  // contained in the square around origin with unit size 2. Drawing to these
+-  // coordinates is equivalent to drawing to the entire screen. The texture is
+-  // stretched over that square using texture coordinates (u, v) that range
+-  // from (0, 0) to (1, 1) inclusive. Texture coordinates are flipped vertically
+-  // here because the incoming frame has origin in upper left hand corner but
+-  // OpenGL expects origin in bottom left corner.
+-  std::array<std::array<GLfloat, 2>, 4> UVCoords = {{
+-      {{0, 1}},  // Lower left.
+-      {{1, 1}},  // Lower right.
+-      {{1, 0}},  // Upper right.
+-      {{0, 0}},  // Upper left.
+-  }};
+-
+-  // Rotate the UV coordinates.
+-  int rotation_offset;
+-  switch (rotation) {
+-    case RTCVideoRotation_0:
+-      rotation_offset = 0;
+-      break;
+-    case RTCVideoRotation_90:
+-      rotation_offset = 1;
+-      break;
+-    case RTCVideoRotation_180:
+-      rotation_offset = 2;
+-      break;
+-    case RTCVideoRotation_270:
+-      rotation_offset = 3;
+-      break;
+-  }
+-  std::rotate(UVCoords.begin(), UVCoords.begin() + rotation_offset,
+-              UVCoords.end());
+-
+-  const GLfloat gVertices[] = {
+-      // X, Y, U, V.
+-      -1, -1, UVCoords[0][0], UVCoords[0][1],
+-       1, -1, UVCoords[1][0], UVCoords[1][1],
+-       1,  1, UVCoords[2][0], UVCoords[2][1],
+-      -1,  1, UVCoords[3][0], UVCoords[3][1],
+-  };
+-
+-  glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(gVertices), gVertices);
+-}
+diff -ruN -x \ com.unity.webrtc/src/sdk/objc/components/video_codec/RTCVideoDecoderH264.mm com.unity.webrtc.updated/src/sdk/objc/components/video_codec/RTCVideoDecoderH264.mm
+--- com.unity.webrtc/src/sdk/objc/components/video_codec/RTCVideoDecoderH264.mm	2025-08-13 16:29:55
++++ com.unity.webrtc.updated/src/sdk/objc/components/video_codec/RTCVideoDecoderH264.mm	2025-08-12 16:21:54
+@@ -203,7 +203,7 @@
+   // TODO(tkchin): Maybe only set OpenGL/IOSurface keys if we know that that
+   // we can pass CVPixelBuffers as native handles in decoder output.
+   NSDictionary *attributes = @{
+-#if defined(WEBRTC_IOS) && (TARGET_OS_MACCATALYST || TARGET_OS_SIMULATOR)
++#if defined(WEBRTC_IOS) /* && (TARGET_OS_MACCATALYST || TARGET_OS_SIMULATOR) */
+     (NSString *)kCVPixelBufferMetalCompatibilityKey : @(YES),
+ #elif defined(WEBRTC_IOS)
+     (NSString *)kCVPixelBufferOpenGLESCompatibilityKey : @(YES),
+diff -ruN -x \ com.unity.webrtc/src/sdk/objc/components/video_codec/RTCVideoEncoderH264.mm com.unity.webrtc.updated/src/sdk/objc/components/video_codec/RTCVideoEncoderH264.mm
+--- com.unity.webrtc/src/sdk/objc/components/video_codec/RTCVideoEncoderH264.mm	2025-08-13 16:29:55
++++ com.unity.webrtc.updated/src/sdk/objc/components/video_codec/RTCVideoEncoderH264.mm	2025-08-12 16:21:57
+@@ -620,7 +620,7 @@
+   // Set source image buffer attributes. These attributes will be present on
+   // buffers retrieved from the encoder's pixel buffer pool.
+   NSDictionary *sourceAttributes = @{
+-#if defined(WEBRTC_IOS) && (TARGET_OS_MACCATALYST || TARGET_OS_SIMULATOR)
++#if defined(WEBRTC_IOS) /* && (TARGET_OS_MACCATALYST || TARGET_OS_SIMULATOR) */
+     (NSString *)kCVPixelBufferMetalCompatibilityKey : @(YES),
+ #elif defined(WEBRTC_IOS)
+     (NSString *)kCVPixelBufferOpenGLESCompatibilityKey : @(YES),
+diff -ruN -x \ com.unity.webrtc/src/sdk/objc/helpers/RTCCameraPreviewView.m com.unity.webrtc.updated/src/sdk/objc/helpers/RTCCameraPreviewView.m
+--- com.unity.webrtc/src/sdk/objc/helpers/RTCCameraPreviewView.m	2025-08-13 16:29:55
++++ com.unity.webrtc.updated/src/sdk/objc/helpers/RTCCameraPreviewView.m	2025-08-12 12:41:11
+@@ -19,10 +19,6 @@
+ 
+ @synthesize captureSession = _captureSession;
+ 
+-+ (Class)layerClass {
+-  return [AVCaptureVideoPreviewLayer class];
+-}
+-
+ - (instancetype)initWithFrame:(CGRect)aRect {
+   self = [super initWithFrame:aRect];
+   if (self) {
+@@ -48,7 +44,7 @@
+     return;
+   }
+   _captureSession = captureSession;
+-  [RTC_OBJC_TYPE(RTCDispatcher)
++  /* [RTC_OBJC_TYPE(RTCDispatcher)
+       dispatchAsyncOnType:RTCDispatcherTypeMain
+                     block:^{
+                       AVCaptureVideoPreviewLayer *previewLayer = [self previewLayer];
+@@ -62,7 +58,7 @@
+                                                               [self setCorrectVideoOrientation];
+                                                             }];
+                                         }];
+-                    }];
++                    }]; */
+ }
+ 
+ - (void)layoutSubviews {
+@@ -78,7 +74,7 @@
+ 
+ - (void)setCorrectVideoOrientation {
+   // Get current device orientation.
+-  UIDeviceOrientation deviceOrientation = [UIDevice currentDevice].orientation;
++  /* UIDeviceOrientation deviceOrientation = [UIDevice currentDevice].orientation;
+   AVCaptureVideoPreviewLayer *previewLayer = [self previewLayer];
+ 
+   // First check if we are allowed to set the video orientation.
+@@ -98,26 +94,22 @@
+           AVCaptureVideoOrientationPortrait;
+     }
+     // If device orientation switches to FaceUp or FaceDown, don't change video orientation.
+-  }
++  } */
+ }
+ 
+ #pragma mark - Private
+ 
+ - (void)addOrientationObserver {
+-  [[NSNotificationCenter defaultCenter] addObserver:self
++  /* [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(orientationChanged:)
+                                                 name:UIDeviceOrientationDidChangeNotification
+-                                              object:nil];
++                                              object:nil]; */
+ }
+ 
+ - (void)removeOrientationObserver {
+-  [[NSNotificationCenter defaultCenter] removeObserver:self
++  /* [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                   name:UIDeviceOrientationDidChangeNotification
+-                                                object:nil];
+-}
+-
+-- (AVCaptureVideoPreviewLayer *)previewLayer {
+-  return (AVCaptureVideoPreviewLayer *)self.layer;
++                                                object:nil]; */
+ }
+ 
+ @end
+File com.unity.webrtc/src/third_party/catapult/third_party/gsutil/third_party/mock/docs/changelog.txt is a unknown type while file com.unity.webrtc.updated/src/third_party/catapult/third_party/gsutil/third_party/mock/docs/changelog.txt is a unknown type
+Binary files com.unity.webrtc/src/third_party/depot_tools/__pycache__/breakpad.cpython-311.pyc and com.unity.webrtc.updated/src/third_party/depot_tools/__pycache__/breakpad.cpython-311.pyc differ
+Binary files com.unity.webrtc/src/third_party/depot_tools/__pycache__/gclient_paths.cpython-311.pyc and com.unity.webrtc.updated/src/third_party/depot_tools/__pycache__/gclient_paths.cpython-311.pyc differ
+Binary files com.unity.webrtc/src/third_party/depot_tools/__pycache__/gclient_utils.cpython-311.pyc and com.unity.webrtc.updated/src/third_party/depot_tools/__pycache__/gclient_utils.cpython-311.pyc differ
+Binary files com.unity.webrtc/src/third_party/depot_tools/__pycache__/subprocess2.cpython-311.pyc and com.unity.webrtc.updated/src/third_party/depot_tools/__pycache__/subprocess2.cpython-311.pyc differ
+diff -ruN -x \ com.unity.webrtc/src/third_party/zlib/zutil.h com.unity.webrtc.updated/src/third_party/zlib/zutil.h
+--- com.unity.webrtc/src/third_party/zlib/zutil.h	2025-08-13 16:31:01
++++ com.unity.webrtc.updated/src/third_party/zlib/zutil.h	2025-08-12 12:52:55
+@@ -159,7 +159,7 @@
+ #      include <unix.h> /* for fdopen */
+ #    else
+ #      ifndef fdopen
+-#        define fdopen(fd,mode) NULL /* No fdopen() */
++//#        define fdopen(fd,mode) NULL /* No fdopen() */
+ #      endif
+ #    endif
+ #  endif

@@ -37,6 +37,9 @@ patch -N "src/sdk/BUILD.gn" < "$COMMAND_DIR/patches/add_objc_deps.patch" || true
 # Fix SetRawImagePlanes() in LibvpxVp8Encoder
 patch -N "src/modules/video_coding/codecs/vp8/libvpx_vp8_encoder.cc" < "$COMMAND_DIR/patches/libvpx_vp8_encoder.patch" || true
 
+# Add support for visionOS
+patch -N -p1 < "$COMMAND_DIR/patches/add_visionos_support.patch" || true
+
 # use included python
 export PATH="$(pwd)/depot_tools/bootstrap-3.8.0.chromium.8_bin/python/bin:$PATH"
 
@@ -56,6 +59,7 @@ do
     gn gen "$OUTPUT_DIR" --root="src" \
       --args="is_debug=${is_debug} \
       target_os=\"ios\" \
+      xros=true \
       ios_target_override=\"arm64-apple-xros2.5-simulator\" \
       ios_sdk_override=\"${XCODE_PATH}/Platforms/XRSimulator.platform/Developer/SDKs/XRSimulator.sdk\" \
       clang_base_path=\"${XCODE_PATH}/Toolchains/XcodeDefault.xctoolchain/usr\" \
