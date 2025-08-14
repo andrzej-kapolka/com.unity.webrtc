@@ -40,6 +40,7 @@ xcodebuild archive \
   -archivePath "$WEBRTC_ARCHIVE_DIR"
 
 rm -rf "$WEBRTC_FRAMEWORK_DIR/webrtc.framework"
+mkdir "$WEBRTC_FRAMEWORK_DIR"
 cp -r "$WEBRTC_ARCHIVE_DIR/Products/@rpath/webrtc.framework" "$WEBRTC_FRAMEWORK_DIR/webrtc.framework"
 
 # todo(kazuki): The command below combines two libraries for supporting iOS and iOS simulator.
