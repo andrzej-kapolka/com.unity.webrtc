@@ -13,11 +13,12 @@ brew install cmake
 
 # Unzip webrtc 
 #curl -L $LIBWEBRTC_DOWNLOAD_URL > webrtc.zip
-unzip -d $SOLUTION_DIR/webrtc "$ARTIFACTS_DIR/webrtc-ios-simulator.zip"
+unzip -o -d $SOLUTION_DIR/webrtc "$ARTIFACTS_DIR/webrtc-ios-simulator.zip"
 
 # Build webrtc Unity plugin 
 cd "$SOLUTION_DIR"
 cmake . \
+  --fresh \
   -G Xcode \
   -D CMAKE_SYSTEM_NAME=iOS \
   -D "CMAKE_OSX_ARCHITECTURES=arm64;x86_64" \
