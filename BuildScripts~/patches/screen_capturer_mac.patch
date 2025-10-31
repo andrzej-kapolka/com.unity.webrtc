@@ -1,0 +1,71 @@
+34,40c34
+<                               CGDisplayStreamFrameAvailableHandler __nullable handler)
+<         CG_AVAILABLE_BUT_DEPRECATED(
+<             10.8,
+<             14.0,
+<             "Please use ScreenCaptureKit API's initWithFilter:configuration:delegate: instead") {
+< #pragma clang diagnostic push
+< #pragma clang diagnostic ignored "-Wunguarded-availability-new"
+---
+>                               CGDisplayStreamFrameAvailableHandler __nullable handler) {
+43d36
+< #pragma clang diagnostic pop
+47,53c40
+<     wrapCGDisplayStreamGetRunLoopSource(CGDisplayStreamRef cg_nullable displayStream)
+<         CG_AVAILABLE_BUT_DEPRECATED(10.8,
+<                                     14.0,
+<                                     "There is no direct replacement for this function. Please use "
+<                                     "ScreenCaptureKit API's SCStream to replace CGDisplayStream") {
+< #pragma clang diagnostic push
+< #pragma clang diagnostic ignored "-Wunguarded-availability-new"
+---
+>     wrapCGDisplayStreamGetRunLoopSource(CGDisplayStreamRef cg_nullable displayStream) {
+55d41
+< #pragma clang diagnostic pop
+58,64c44
+< static CGError wrapCGDisplayStreamStart(CGDisplayStreamRef cg_nullable displayStream)
+<     CG_AVAILABLE_BUT_DEPRECATED(10.8,
+<                                 14.0,
+<                                 "Please use ScreenCaptureKit API's "
+<                                 "startCaptureWithCompletionHandler: to start a stream instead") {
+< #pragma clang diagnostic push
+< #pragma clang diagnostic ignored "-Wunguarded-availability-new"
+---
+> static CGError wrapCGDisplayStreamStart(CGDisplayStreamRef cg_nullable displayStream) {
+66d45
+< #pragma clang diagnostic pop
+69,75c48
+< static CGError wrapCGDisplayStreamStop(CGDisplayStreamRef cg_nullable displayStream)
+<     CG_AVAILABLE_BUT_DEPRECATED(10.8,
+<                                 14.0,
+<                                 "Please use ScreenCaptureKit API's "
+<                                 "stopCaptureWithCompletionHandler: to stop a stream instead") {
+< #pragma clang diagnostic push
+< #pragma clang diagnostic ignored "-Wunguarded-availability-new"
+---
+> static CGError wrapCGDisplayStreamStop(CGDisplayStreamRef cg_nullable displayStream) {
+77d49
+< #pragma clang diagnostic pop
+80,85c52
+< static CFStringRef wrapkCGDisplayStreamShowCursor() CG_AVAILABLE_BUT_DEPRECATED(
+<     10.8,
+<     14.0,
+<     "Please use ScreenCaptureKit API's SCStreamConfiguration showsCursor property instead") {
+< #pragma clang diagnostic push
+< #pragma clang diagnostic ignored "-Wunguarded-availability-new"
+---
+> static CFStringRef wrapkCGDisplayStreamShowCursor() {
+87d53
+< #pragma clang diagnostic pop
+93,99c59
+<                                       size_t* rectCount)
+<         CG_AVAILABLE_BUT_DEPRECATED(10.8,
+<                                     14.0,
+<                                     "Please use ScreenCaptureKit API's SCStreamFrameInfo with "
+<                                     "SCStreamFrameInfoContentRect instead") {
+< #pragma clang diagnostic push
+< #pragma clang diagnostic ignored "-Wunguarded-availability-new"
+---
+>                                       size_t* rectCount) {
+101d60
+< #pragma clang diagnostic pop

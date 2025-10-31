@@ -1,0 +1,3 @@
+79a80,81
+>     'ffmpeg': ['third_party/ffmpeg/LICENSE.md'],
+>     'openh264': ['third_party/openh264/src/LICENSE'],

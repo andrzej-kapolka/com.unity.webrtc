@@ -36,6 +36,12 @@ patch -N "src/sdk/BUILD.gn" < "$COMMAND_DIR/patches/add_objc_deps.patch"
 # Fix SetRawImagePlanes() in LibvpxVp8Encoder
 patch -N "src/modules/video_coding/codecs/vp8/libvpx_vp8_encoder.cc" < "$COMMAND_DIR/patches/libvpx_vp8_encoder.patch"
 
+# Remove CG_AVAILABLE_BUT_DEPRECATED
+patch -N "src/modules/desktop_capture/mac/screen_capturer_mac.mm" < "$COMMAND_DIR/patches/screen_capturer_mac.patch"
+
+# Add license mappings
+patch -N "src/tools_webrtc/libs/generate_licenses.py" < "$COMMAND_DIR/patches/generate_licenses.patch"
+
 mkdir -p "$ARTIFACTS_DIR/lib"
 
 for is_debug in "true" "false"
@@ -51,7 +57,7 @@ do
       use_custom_libcxx=false \
       rtc_include_tests=false \
       rtc_build_examples=false \
-      rtc_use_h264=false \
+      rtc_use_h264=true \
       symbol_level=0 \
       enable_iterator_debugging=false \
       is_component_build=false \
